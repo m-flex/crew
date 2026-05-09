@@ -3,9 +3,56 @@ use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::thread;
 use tauri::{AppHandle, Emitter};
+
+#[cfg(unix)]
+fn user_path() -> String {
+    static CACHED: OnceLock<String> = OnceLock::new();
+    CACHED
+        .get_or_init(|| {
+            if let Some(p) = login_shell_path() {
+                return p;
+            }
+            let home = std::env::var("HOME").unwrap_or_default();
+            let extras = [
+                format!("{home}/.local/bin"),
+                format!("{home}/.cargo/bin"),
+                format!("{home}/.volta/bin"),
+                "/opt/homebrew/bin".to_string(),
+                "/opt/homebrew/sbin".to_string(),
+                "/usr/local/bin".to_string(),
+            ];
+            let current = std::env::var("PATH").unwrap_or_default();
+            let mut combined = extras.join(":");
+            if !current.is_empty() {
+                combined.push(':');
+                combined.push_str(&current);
+            }
+            combined
+        })
+        .clone()
+}
+
+#[cfg(unix)]
+fn login_shell_path() -> Option<String> {
+    let shell = std::env::var("SHELL").ok()?;
+    let output = std::process::Command::new(&shell)
+        .args(["-ilc", "printf %s \"$PATH\""])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let s = String::from_utf8(output.stdout).ok()?;
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
 
 #[derive(Clone, serde::Serialize)]
 pub struct PtyOutput {
@@ -69,6 +116,8 @@ impl AgentManager {
         for (k, v) in std::env::vars() {
             cmd.env(k, v);
         }
+        #[cfg(unix)]
+        cmd.env("PATH", user_path());
 
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
