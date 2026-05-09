@@ -9,6 +9,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { PaneSpec, useCrew } from "../store";
 import { TERM_THEME } from "../theme";
 import { createStatusDetector, AgentStatus } from "../status";
+import { GitStatus, dirtyFileCount, useGitStatus } from "../git";
+import { GitPanel } from "./GitPanel";
 import "@xterm/xterm/css/xterm.css";
 
 interface PtyOutput {
@@ -37,6 +39,9 @@ export function TerminalPane({ spec, focused, index }: Props) {
   const noteActivity = useCrew((s) => s.noteActivity);
   const isMaximized = useCrew((s) => s.maximizedKey === spec.key);
   const toggleMaximize = useCrew((s) => s.toggleMaximize);
+  const gitPanelOpen = useCrew((s) => s.gitPanelOpen[spec.key] ?? false);
+  const toggleGitPanel = useCrew((s) => s.toggleGitPanel);
+  const gitStatus = useGitStatus(spec.cwd);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -332,6 +337,18 @@ export function TerminalPane({ spec, focused, index }: Props) {
           <span className="pane-cwd" title={spec.cwd}>
             {cwdLabel}
           </span>
+          {gitStatus && (
+            <button
+              className={`pane-branch-trigger ${gitPanelOpen ? "is-active" : ""}`}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                toggleGitPanel(spec.key);
+              }}
+              title={gitPanelOpen ? "Hide git panel" : "Show git panel"}
+            >
+              <BranchBadge status={gitStatus} />
+            </button>
+          )}
         </div>
         <div className="pane-actions">
           <button
@@ -376,7 +393,12 @@ export function TerminalPane({ spec, focused, index }: Props) {
           </button>
         </div>
       </div>
-      <div ref={hostRef} className="pane-terminal" />
+      <div className="pane-content">
+        <div ref={hostRef} className="pane-terminal" />
+        {gitPanelOpen && gitStatus && (
+          <GitPanel pane={spec} status={gitStatus} />
+        )}
+      </div>
     </div>
   );
 }
@@ -386,6 +408,64 @@ function labelFromCwd(cwd: string): string {
   if (parts.length === 0) return cwd;
   if (parts.length === 1) return parts[0];
   return parts.slice(-2).join("/");
+}
+
+function BranchBadge({ status }: { status: GitStatus }) {
+  const dirty = dirtyFileCount(status);
+  const conflicted = status.conflicted.length > 0;
+  const label = status.detached
+    ? "DETACHED"
+    : status.branch ?? "no-branch";
+  const tone = conflicted
+    ? "pane-branch-badge-conflict"
+    : dirty > 0
+      ? "pane-branch-badge-dirty"
+      : "";
+  const tooltipParts = [`Branch: ${label}`];
+  if (status.upstream) tooltipParts.push(`Upstream: ${status.upstream}`);
+  if (status.ahead || status.behind)
+    tooltipParts.push(`Ahead ${status.ahead} / Behind ${status.behind}`);
+  if (dirty > 0) tooltipParts.push(`${dirty} changed`);
+  if (conflicted) tooltipParts.push(`${status.conflicted.length} conflicted`);
+
+  return (
+    <span
+      className={`pane-branch-badge ${tone}`}
+      title={tooltipParts.join("\n")}
+    >
+      <BranchIcon />
+      <span className="pane-branch-name">{label}</span>
+      {(status.ahead > 0 || status.behind > 0) && (
+        <span className="pane-branch-arrow">
+          {status.ahead > 0 && <span>↑{status.ahead}</span>}
+          {status.behind > 0 && <span>↓{status.behind}</span>}
+        </span>
+      )}
+      {dirty > 0 && <span className="pane-branch-count">•{dirty}</span>}
+    </span>
+  );
+}
+
+function BranchIcon() {
+  return (
+    <svg
+      width="9"
+      height="10"
+      viewBox="0 0 9 10"
+      aria-hidden
+      className="pane-branch-icon"
+    >
+      <circle cx="2" cy="2" r="1.1" fill="currentColor" />
+      <circle cx="2" cy="8" r="1.1" fill="currentColor" />
+      <circle cx="7" cy="3.5" r="1.1" fill="currentColor" />
+      <path
+        d="M2 3 V7 M2 5 Q2 3.5 4 3.5 H6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="0.9"
+      />
+    </svg>
+  );
 }
 
 function ClearIcon() {
