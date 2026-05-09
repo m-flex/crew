@@ -2,8 +2,10 @@ import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { PaneSpec, useCrew } from "../store";
 import { TERM_THEME } from "../theme";
 import { createStatusDetector, AgentStatus } from "../status";
@@ -62,6 +64,59 @@ export function TerminalPane({ spec, focused, index }: Props) {
     } catch (e) {
       console.warn("WebGL addon failed", e);
     }
+
+    // Ctrl/Cmd+Click to open URLs in the system browser. Plain click is a
+    // no-op so users can still select text that overlaps a link.
+    term.loadAddon(
+      new WebLinksAddon((event, uri) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        openUrl(uri).catch((err) => console.error("openUrl failed", err));
+      })
+    );
+
+    // Ctrl/Cmd+C copies when there's a selection (otherwise falls through to
+    // SIGINT). Ctrl/Cmd+V pastes from the clipboard. Shift+Insert / Ctrl+Insert
+    // are also wired for parity with Linux terminals.
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== "keydown") return true;
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+      if (mod && key === "c") {
+        const sel = term.getSelection();
+        if (sel && sel.length > 0) {
+          navigator.clipboard.writeText(sel).catch(console.error);
+          term.clearSelection();
+          return false;
+        }
+        return true;
+      }
+      if (mod && key === "v") {
+        navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (text) term.paste(text);
+          })
+          .catch(console.error);
+        return false;
+      }
+      if (mod && e.key === "Insert") {
+        const sel = term.getSelection();
+        if (sel && sel.length > 0) {
+          navigator.clipboard.writeText(sel).catch(console.error);
+        }
+        return false;
+      }
+      if (e.shiftKey && e.key === "Insert") {
+        navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (text) term.paste(text);
+          })
+          .catch(console.error);
+        return false;
+      }
+      return true;
+    });
 
     const detector = createStatusDetector({
       onChange: (s: AgentStatus) => setStatus(id, s),
