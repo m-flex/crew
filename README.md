@@ -7,7 +7,7 @@ Built with Tauri 2 + React + TypeScript. Native PTYs (ConPTY on Windows, openpty
 ## Views
 
 - **Grid** — tiled terminals you can focus, maximize, or close.
-- **Radar** — at-a-glance status of every agent (running / awaiting input / idle).
+- **Radar** — at-a-glance status card per agent. Each card shows one of: spawning, thinking, idle, awaiting input, exited, error, plus the time since the last activity. Click a card to jump back to that agent in Grid view. The Radar pill in the topbar carries a badge with the count of agents currently awaiting input.
 
 ## Roles
 
@@ -35,6 +35,19 @@ When you spawn a new agent on a folder that is inside a git repository, Crew off
 
 Auto-created worktrees are removed when the agent's pane closes (Crew prompts before discarding uncommitted changes). A journal at your app data dir tracks active worktrees so a crashed app can prune the orphans on next launch. Templates remember each pane's branch — loading a template recreates the worktrees.
 
+## Templates
+
+Save the current set of panes (commands, working directories, role assignments, branches) as a named template, then load it later to recreate the layout in one click. You can mark one template as the default so it auto-loads on app start. Open the **Templates** modal in the topbar to save, load, rename, or delete templates.
+
+## Idle notifications
+
+Toggle the bell icon in the topbar to opt in to OS notifications when an agent transitions to idle (the prompt is back, ready for input). Crew asks for system notification permission the first time you enable it. The toggle is per-install and remembered across launches.
+
+## Terminal niceties
+
+- **Copy / paste** — `Ctrl/⌘ C` copies the current selection (or sends an interrupt if there's no selection, matching terminal convention). `Ctrl/⌘ V` pastes from the clipboard.
+- **Ctrl/⌘ Click links** — URLs in agent output become clickable; modifier-click opens them in your default browser.
+
 ## Shortcuts
 
 | Keys | Action |
@@ -46,6 +59,9 @@ Auto-created worktrees are removed when the agent's pane closes (Crew prompts be
 | `Ctrl/⌘ ]` / `[` | Focus next / previous agent |
 | `Ctrl/⌘ \` | Cycle view (Grid ↔ Radar) |
 | `Ctrl/⌘ Enter` | Open broadcast palette (and send from inside it) |
+| `Ctrl/⌘ C` | Copy selection in terminal (interrupt if no selection) |
+| `Ctrl/⌘ V` | Paste in terminal |
+| `Ctrl/⌘ Click` | Open URL under cursor in browser |
 
 ## Prerequisites
 
@@ -55,7 +71,7 @@ Auto-created worktrees are removed when the agent's pane closes (Crew prompts be
   - **Windows** — Microsoft C++ Build Tools + WebView2 (already on Win11)
   - **macOS** — Xcode Command Line Tools
   - **Linux** — `webkit2gtk-4.1`, `libssl-dev`, `build-essential` (see [Tauri prerequisites](https://tauri.app/start/prerequisites/))
-- The [`claude`](https://docs.claude.com/en/docs/claude-code) CLI on your `PATH` (Crew spawns whatever `command` you point a pane at, but the default templates assume `claude`).
+- The [`claude`](https://docs.claude.com/en/docs/claude-code) CLI on your `PATH` (Crew spawns whatever `command` you point a pane at, but the default for a new agent is `claude`).
 
 ## Run from source (dev)
 
@@ -111,6 +127,7 @@ Then re-run the installer (it upgrades in place).
 src/                React UI (views, terminal panes, store)
 src-tauri/          Rust backend
   src/pty.rs        PTY manager — spawn / write / resize / kill agents
+  src/git.rs        libgit2-backed status / branches / log / diff / worktrees
   src/lib.rs        Tauri command handlers + plugin wiring
   tauri.conf.json   App identifier, window, bundler config
 ```
