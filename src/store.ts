@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { AgentStatus } from "./status";
+import { notifyAgentIdle, labelFromCwd } from "./notify";
 
 export interface PaneSpec {
   key: string;
@@ -44,6 +45,7 @@ interface CrewState {
   // Persisted
   templates: Template[];
   defaultTemplateId: string | null;
+  notificationsEnabled: boolean;
 
   // Pane lifecycle
   newAgent: () => Promise<void>;
@@ -81,6 +83,9 @@ interface CrewState {
   renameTemplate: (id: string, name: string) => void;
   setDefaultTemplate: (id: string | null) => void;
 
+  // Notifications
+  toggleNotifications: () => void;
+
   // Boot
   bootIfNeeded: () => Promise<void>;
 }
@@ -109,6 +114,7 @@ export const useCrew = create<CrewState>()(
 
       templates: [],
       defaultTemplateId: null,
+      notificationsEnabled: false,
 
       spawnAgent: (cwd, command = "claude", args = []) => {
         const key = mkKey();
@@ -207,12 +213,20 @@ export const useCrew = create<CrewState>()(
           view: VIEW_CYCLE[(VIEW_CYCLE.indexOf(s.view) + 1) % VIEW_CYCLE.length],
         })),
 
-      setStatus: (key, status) =>
-        set((s) =>
-          s.statuses[key] === status
-            ? s
-            : { statuses: { ...s.statuses, [key]: status } }
-        ),
+      setStatus: (key, status) => {
+        const s = get();
+        const prev = s.statuses[key];
+        if (prev === status) return;
+        set({ statuses: { ...s.statuses, [key]: status } });
+        if (
+          s.notificationsEnabled &&
+          prev === "thinking" &&
+          status === "idle"
+        ) {
+          const pane = s.panes.find((p) => p.key === key);
+          notifyAgentIdle(pane ? labelFromCwd(pane.cwd) : "Agent");
+        }
+      },
 
       noteActivity: (key) =>
         set((s) => ({
@@ -343,6 +357,9 @@ export const useCrew = create<CrewState>()(
             id && s.defaultTemplateId === id ? null : id,
         })),
 
+      toggleNotifications: () =>
+        set((s) => ({ notificationsEnabled: !s.notificationsEnabled })),
+
       bootIfNeeded: async () => {
         const s = get();
         if (s.hasBooted) return;
@@ -362,6 +379,7 @@ export const useCrew = create<CrewState>()(
       partialize: (state) => ({
         templates: state.templates,
         defaultTemplateId: state.defaultTemplateId,
+        notificationsEnabled: state.notificationsEnabled,
       }) as Partial<CrewState>,
     }
   )
