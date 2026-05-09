@@ -545,10 +545,10 @@ body,
 }
 
 .empty-logo {
-  width: 84px;
-  height: 84px;
-  object-fit: contain;
+  width: 72px;
+  height: 72px;
   margin-bottom: 22px;
+  color: #4a90e2;
   filter: drop-shadow(0 6px 24px rgba(74, 144, 226, 0.28));
   -webkit-user-drag: none;
   user-select: none;
