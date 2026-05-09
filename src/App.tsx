@@ -3,9 +3,10 @@ import { useCrew } from "./store";
 import { Topbar } from "./components/Topbar";
 import { AgentGrid } from "./components/AgentGrid";
 import { RadarView } from "./components/RadarView";
-import { SwarmView } from "./components/Swarm";
 import { TemplatesModal } from "./components/TemplatesModal";
 import { BranchPickerModal } from "./components/BranchPickerModal";
+import { RolesModal } from "./components/RolesModal";
+import { BroadcastPalette } from "./components/BroadcastPalette";
 import "./App.css";
 
 function App() {
@@ -18,6 +19,9 @@ function App() {
   const cycleView = useCrew((s) => s.cycleView);
   const toggleMaximize = useCrew((s) => s.toggleMaximize);
   const bootIfNeeded = useCrew((s) => s.bootIfNeeded);
+  const setBroadcastPaletteOpen = useCrew((s) => s.setBroadcastPaletteOpen);
+  const broadcastPaletteOpen = useCrew((s) => s.broadcastPaletteOpen);
+  const paneCount = useCrew((s) => s.panes.length);
 
   useEffect(() => {
     bootIfNeeded();
@@ -52,6 +56,14 @@ function App() {
       } else if (e.key === "\\") {
         cycleView();
         handled = true;
+      } else if (e.key === "Enter") {
+        // Ctrl+Enter inside the palette is handled by the palette itself
+        // (which sends + closes). Out here it opens the palette — but only
+        // if there's something to broadcast to.
+        if (!broadcastPaletteOpen && paneCount > 0) {
+          setBroadcastPaletteOpen(true);
+          handled = true;
+        }
       }
 
       if (handled) {
@@ -69,6 +81,9 @@ function App() {
     focusedKey,
     cycleView,
     toggleMaximize,
+    broadcastPaletteOpen,
+    paneCount,
+    setBroadcastPaletteOpen,
   ]);
 
   return (
@@ -77,10 +92,11 @@ function App() {
       <div className="views">
         <AgentGrid hidden={view !== "grid"} />
         {view === "radar" && <RadarView />}
-        {view === "swarm" && <SwarmView />}
       </div>
       <TemplatesModal />
       <BranchPickerModal />
+      <RolesModal />
+      <BroadcastPalette />
     </div>
   );
 }

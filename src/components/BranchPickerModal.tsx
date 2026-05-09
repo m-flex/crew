@@ -5,6 +5,7 @@ import { BranchInfo, BranchList, gitListBranches } from "../git";
 export function BranchPickerModal() {
   const request = useCrew((s) => s.branchPicker);
   const resolve = useCrew((s) => s.resolveBranchPicker);
+  const roles = useCrew((s) => s.roles);
 
   const [branches, setBranches] = useState<BranchList | null>(null);
   const [tab, setTab] = useState<"current" | "existing" | "new">("current");
@@ -12,6 +13,7 @@ export function BranchPickerModal() {
   const [newName, setNewName] = useState("");
   const [base, setBase] = useState<string>("");
   const [filter, setFilter] = useState("");
+  const [roleId, setRoleId] = useState<string | null>(null);
 
   // Reset internal state every time a new request opens.
   useEffect(() => {
@@ -22,6 +24,7 @@ export function BranchPickerModal() {
     setNewName("");
     setFilter("");
     setBase(request.detect.currentBranch ?? "");
+    setRoleId(null);
     let cancelled = false;
     (async () => {
       const list = await gitListBranches(request.basePath);
@@ -68,7 +71,7 @@ export function BranchPickerModal() {
     } else if (tab === "new" && newName.trim() && base) {
       choice = { kind: "new", name: newName.trim(), base };
     }
-    if (choice) resolve(choice);
+    if (choice) resolve({ branch: choice, roleId });
   };
 
   const canSubmit =
@@ -212,6 +215,22 @@ export function BranchPickerModal() {
               </p>
             </>
           )}
+        </div>
+
+        <div className="branch-picker-role">
+          <label className="branch-picker-field-label">Role</label>
+          <select
+            className="template-save-input"
+            value={roleId ?? ""}
+            onChange={(e) => setRoleId(e.target.value || null)}
+          >
+            <option value="">No role</option>
+            {roles.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="modal-footer branch-picker-footer">

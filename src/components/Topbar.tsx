@@ -6,7 +6,6 @@ import { ensureNotificationPermission } from "../notify";
 const VIEW_PILLS: { key: View; label: string }[] = [
   { key: "grid", label: "Grid" },
   { key: "radar", label: "Radar" },
-  { key: "swarm", label: "Swarm" },
 ];
 
 export function Topbar() {
@@ -16,7 +15,10 @@ export function Topbar() {
   const view = useCrew((s) => s.view);
   const setView = useCrew((s) => s.setView);
   const setTemplatesModalOpen = useCrew((s) => s.setTemplatesModalOpen);
+  const setRolesModalOpen = useCrew((s) => s.setRolesModalOpen);
+  const setBroadcastPaletteOpen = useCrew((s) => s.setBroadcastPaletteOpen);
   const templateCount = useCrew((s) => s.templates.length);
+  const roleCount = useCrew((s) => s.roles.length);
   const notificationsEnabled = useCrew((s) => s.notificationsEnabled);
   const toggleNotifications = useCrew((s) => s.toggleNotifications);
   const awaitingCount = useCrew(
@@ -93,6 +95,26 @@ export function Topbar() {
           aria-pressed={notificationsEnabled}
         >
           <BellIcon muted={!notificationsEnabled} />
+        </button>
+        {panes.length > 0 && (
+          <button
+            className="action action-subtle"
+            onClick={() => setBroadcastPaletteOpen(true)}
+            title="Broadcast (Ctrl+Enter)"
+          >
+            Broadcast
+            <kbd className="kbd">⌃↵</kbd>
+          </button>
+        )}
+        <button
+          className="action action-subtle"
+          onClick={() => setRolesModalOpen(true)}
+          title="Roles"
+        >
+          Roles
+          {roleCount > 0 && (
+            <span className="action-count">{roleCount}</span>
+          )}
         </button>
         <button
           className="action action-subtle"

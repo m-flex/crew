@@ -6,11 +6,12 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { PaneSpec, useCrew } from "../store";
+import { PaneSpec, useCrew, composeSpawnArgs } from "../store";
 import { TERM_THEME } from "../theme";
 import { createStatusDetector, AgentStatus } from "../status";
 import { GitStatus, dirtyFileCount, useGitStatus } from "../git";
 import { GitPanel } from "./GitPanel";
+import { RoleChip } from "./RoleChip";
 import "@xterm/xterm/css/xterm.css";
 
 interface PtyOutput {
@@ -192,10 +193,17 @@ export function TerminalPane({ spec, focused, index }: Props) {
     const doSpawn = async () => {
       if (!alive) return;
       try {
+        // Resolve the role at spawn time so an edited preset takes effect on
+        // the next spawn / restart without rewriting saved pane specs.
+        const roles = useCrew.getState().roles;
+        const role = spec.roleId
+          ? roles.find((r) => r.id === spec.roleId)
+          : undefined;
+        const finalArgs = composeSpawnArgs(spec.args, role);
         await invoke("spawn_agent", {
           id,
           command: spec.command,
-          args: spec.args,
+          args: finalArgs,
           cwd: spec.cwd,
           cols: term.cols,
           rows: term.rows,
@@ -337,6 +345,7 @@ export function TerminalPane({ spec, focused, index }: Props) {
           <span className="pane-cwd" title={spec.cwd}>
             {cwdLabel}
           </span>
+          <RoleChip paneKey={spec.key} alwaysShow />
           {gitStatus && (
             <button
               className={`pane-branch-trigger ${gitPanelOpen ? "is-active" : ""}`}

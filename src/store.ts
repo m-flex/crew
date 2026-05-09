@@ -23,9 +23,30 @@ export interface PaneSpec {
   key: string;
   cwd: string;
   command: string;
+  // User-supplied args. Role-injected args (--append-system-prompt etc.) are
+  // composed at spawn time in TerminalPane via composeSpawnArgs() so editing a
+  // role updates the next spawn without rewriting saved specs.
   args: string[];
   createdAt: number;
   worktree?: WorktreeMeta;
+  roleId?: string;
+}
+
+export interface RolePreset {
+  id: string;
+  name: string;
+  // Hex color used for the chip + radar ring. Optional — when absent the chip
+  // renders in a neutral tone.
+  color?: string;
+  // Appended to claude via --append-system-prompt at spawn time. Baked into
+  // the running process; editing later only affects future spawns.
+  systemPrompt?: string;
+  // Prepended to every Swarm broadcast directed at panes wearing this role,
+  // separated by a blank line: `${promptPrefix}\n\n${userMessage}`.
+  promptPrefix?: string;
+  // Free-form extra CLI args (e.g. ["--model", "claude-sonnet-4-6"]). Passed
+  // verbatim before --append-system-prompt.
+  spawnArgs?: string[];
 }
 
 export type BranchChoice =
@@ -33,10 +54,15 @@ export type BranchChoice =
   | { kind: "existing"; branch: string }
   | { kind: "new"; name: string; base: string };
 
+export interface LaunchChoice {
+  branch: BranchChoice;
+  roleId: string | null;
+}
+
 export interface BranchPickerRequest {
   basePath: string;
   detect: DetectInfo;
-  resolve: (choice: BranchChoice | null) => void;
+  resolve: (choice: LaunchChoice | null) => void;
 }
 
 export interface SpawnOptions {
@@ -44,9 +70,10 @@ export interface SpawnOptions {
   args?: string[];
   key?: string;
   worktree?: WorktreeMeta;
+  roleId?: string;
 }
 
-export type View = "grid" | "radar" | "swarm";
+export type View = "grid" | "radar";
 
 export interface TemplateAgent {
   cwd: string;
@@ -56,6 +83,7 @@ export interface TemplateAgent {
   // creates a worktree on the branch (creating it if missing). When absent,
   // the agent spawns directly in `cwd` as before.
   branch?: string;
+  roleId?: string;
 }
 
 export interface Template {
@@ -81,11 +109,20 @@ interface CrewState {
   hasBooted: boolean;
   branchPicker: BranchPickerRequest | null;
   gitPanelOpen: Record<string, boolean>;
+  // Ephemeral: when set, broadcast() uses this role's promptPrefix for every
+  // selected pane regardless of each pane's assigned role.
+  broadcastOverrideRoleId: string | null;
+  rolesModalOpen: boolean;
+  broadcastPaletteOpen: boolean;
 
   // Persisted
   templates: Template[];
   defaultTemplateId: string | null;
   notificationsEnabled: boolean;
+  roles: RolePreset[];
+  // Set the first time we seed starter presets so we don't re-seed after the
+  // user has deliberately deleted them all.
+  rolesSeeded: boolean;
 
   // Pane lifecycle
   newAgent: () => Promise<void>;
@@ -97,8 +134,8 @@ interface CrewState {
   openBranchPicker: (
     basePath: string,
     detect: DetectInfo,
-  ) => Promise<BranchChoice | null>;
-  resolveBranchPicker: (choice: BranchChoice | null) => void;
+  ) => Promise<LaunchChoice | null>;
+  resolveBranchPicker: (choice: LaunchChoice | null) => void;
 
   // Git panel
   toggleGitPanel: (key: string) => void;
@@ -112,6 +149,7 @@ interface CrewState {
     branch: string;
     base: string | null;
     newBranch: boolean;
+    roleId?: string | null;
   }) => Promise<void>;
 
   // Focus / nav
@@ -147,16 +185,92 @@ interface CrewState {
   // Notifications
   toggleNotifications: () => void;
 
+  // Roles
+  createRole: (input: Omit<RolePreset, "id">) => string;
+  updateRole: (id: string, patch: Partial<Omit<RolePreset, "id">>) => void;
+  deleteRole: (id: string) => void;
+  assignPaneRole: (paneKey: string, roleId: string | null) => void;
+  setRolesModalOpen: (open: boolean) => void;
+  setBroadcastOverrideRoleId: (id: string | null) => void;
+  setBroadcastPaletteOpen: (open: boolean) => void;
+
   // Boot
   bootIfNeeded: () => Promise<void>;
+}
+
+const STARTER_ROLES: Omit<RolePreset, "id">[] = [
+  {
+    name: "Reviewer",
+    color: "#7c9eff",
+    systemPrompt:
+      "You are reviewing code in this worktree, not changing it. Read diffs, comment on bugs, security issues, missed edge cases, and unclear naming. Do not run Edit or Write tools. Keep feedback concise and actionable.",
+    promptPrefix:
+      "Review the pending changes in this worktree against the request below. Focus on bugs, security, and correctness — not style.",
+  },
+  {
+    name: "Tester",
+    color: "#5fc37c",
+    systemPrompt:
+      "You write tests covering the work in this worktree. Read the existing test setup first, follow the project's conventions, and prefer integration tests over heavy mocking. Do not modify production code; only add or extend tests.",
+    promptPrefix:
+      "Add test coverage for the work in this worktree. If the user message names a target, scope tests to that.",
+  },
+  {
+    name: "Refactorer",
+    color: "#d49b56",
+    systemPrompt:
+      "You refactor code without changing observable behavior. Make small, reviewable diffs. Keep the public API stable. Run tests after each change.",
+    promptPrefix:
+      "Refactor as described below. Preserve behavior; do not add features.",
+  },
+  {
+    name: "Documenter",
+    color: "#b58cff",
+    systemPrompt:
+      "You write documentation for this codebase. Match the existing voice. Skip obvious comments; explain only what isn't clear from the code.",
+    promptPrefix: "Update documentation per the request below.",
+  },
+];
+
+// Composes the final argv for a `claude` spawn from a pane's user-supplied
+// args + its assigned role. Kept pure so TerminalPane can call it at spawn
+// time without re-running side effects.
+export function composeSpawnArgs(
+  userArgs: string[],
+  role: RolePreset | undefined,
+): string[] {
+  if (!role) return userArgs;
+  const out = [...userArgs, ...(role.spawnArgs ?? [])];
+  if (role.systemPrompt && role.systemPrompt.trim().length > 0) {
+    out.push("--append-system-prompt", role.systemPrompt);
+  }
+  return out;
 }
 
 let counter = 0;
 const mkKey = () => `pane-${++counter}-${Date.now().toString(36)}`;
 const mkTemplateId = () =>
   `tpl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const mkRoleId = () =>
+  `role-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-const VIEW_CYCLE: View[] = ["grid", "radar", "swarm"];
+// Pending "agent idle" notifications, keyed by pane id. Held outside zustand
+// because they're imperative side-effects that can be cancelled when status
+// changes back. Mid-turn pauses flap thinking→idle→thinking many times; a
+// scheduled-and-cancellable notification means only sustained idle fires.
+const idleNotifyTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const NOTIFY_QUIET_MS = 5000;
+const MIN_THINKING_FOR_NOTIFY_MS = 3000;
+
+const cancelIdleNotify = (key: string) => {
+  const t = idleNotifyTimers.get(key);
+  if (t) {
+    clearTimeout(t);
+    idleNotifyTimers.delete(key);
+  }
+};
+
+const VIEW_CYCLE: View[] = ["grid", "radar"];
 
 export const useCrew = create<CrewState>()(
   persist(
@@ -175,10 +289,15 @@ export const useCrew = create<CrewState>()(
       hasBooted: false,
       branchPicker: null,
       gitPanelOpen: {},
+      broadcastOverrideRoleId: null,
+      rolesModalOpen: false,
+      broadcastPaletteOpen: false,
 
       templates: [],
       defaultTemplateId: null,
       notificationsEnabled: false,
+      roles: [],
+      rolesSeeded: false,
 
       spawnAgent: (cwd, opts = {}) => {
         const key = opts.key ?? mkKey();
@@ -194,6 +313,7 @@ export const useCrew = create<CrewState>()(
               args,
               createdAt: Date.now(),
               worktree: opts.worktree,
+              roleId: opts.roleId,
             },
           ],
           focusedKey: key,
@@ -218,24 +338,28 @@ export const useCrew = create<CrewState>()(
           return;
         }
 
-        const choice = await get().openBranchPicker(picked, detect);
-        if (!choice) return;
+        const launch = await get().openBranchPicker(picked, detect);
+        if (!launch) return;
+
+        const { branch: choice, roleId } = launch;
 
         if (choice.kind === "current") {
-          get().spawnAgent(picked);
+          get().spawnAgent(picked, { roleId: roleId ?? undefined });
           return;
         }
 
-        const branch = choice.kind === "existing" ? choice.branch : choice.name;
+        const branchName =
+          choice.kind === "existing" ? choice.branch : choice.name;
         const base = choice.kind === "new" ? choice.base : null;
         const newBranch = choice.kind === "new";
 
         try {
           await get().spawnInWorktree({
             repoRoot: detect.repoRoot,
-            branch,
+            branch: branchName,
             base,
             newBranch,
+            roleId,
           });
         } catch (e) {
           console.error("worktree creation failed:", e);
@@ -247,7 +371,7 @@ export const useCrew = create<CrewState>()(
       },
 
       openBranchPicker: (basePath, detect) =>
-        new Promise<BranchChoice | null>((resolve) => {
+        new Promise<LaunchChoice | null>((resolve) => {
           set({ branchPicker: { basePath, detect, resolve } });
         }),
 
@@ -269,7 +393,7 @@ export const useCrew = create<CrewState>()(
           gitPanelOpen: { ...s.gitPanelOpen, [key]: open },
         })),
 
-      spawnInWorktree: async ({ repoRoot, branch, base, newBranch }) => {
+      spawnInWorktree: async ({ repoRoot, branch, base, newBranch, roleId }) => {
         const paneId = mkKey();
         const wt = await gitCreateWorktree({
           repoRoot,
@@ -285,10 +409,12 @@ export const useCrew = create<CrewState>()(
             branch: wt.branch,
             autoCreated: true,
           },
+          roleId: roleId ?? undefined,
         });
       },
 
       closeAgent: async (key) => {
+        cancelIdleNotify(key);
         const pane = get().panes.find((p) => p.key === key);
         if (pane?.worktree?.autoCreated) {
           let removed = true;
@@ -346,6 +472,7 @@ export const useCrew = create<CrewState>()(
 
       closeAll: async () => {
         const { panes } = get();
+        for (const p of panes) cancelIdleNotify(p.key);
         // Force-cleanup worktrees in parallel — closeAll is a nuclear gesture,
         // we don't prompt per-pane.
         await Promise.allSettled(
@@ -421,7 +548,12 @@ export const useCrew = create<CrewState>()(
           thinkingStartedAt: nextStarted,
         });
 
-        const MIN_THINKING_FOR_NOTIFY_MS = 3000;
+        // Any status change cancels a pending "idle" notification. If the
+        // agent resumed work (thinking) the notification is wrong; if it
+        // moved to awaiting/exited/error, the user will see the dot — we
+        // don't want to ping for a state that no longer matches.
+        cancelIdleNotify(key);
+
         if (
           s.notificationsEnabled &&
           prev === "thinking" &&
@@ -429,10 +561,21 @@ export const useCrew = create<CrewState>()(
         ) {
           const duration =
             prevStartedAt !== undefined ? now - prevStartedAt : Infinity;
-          if (duration >= MIN_THINKING_FOR_NOTIFY_MS) {
-            const pane = s.panes.find((p) => p.key === key);
+          if (duration < MIN_THINKING_FOR_NOTIFY_MS) return;
+
+          // Schedule the notification — only fire if the agent stays idle
+          // for NOTIFY_QUIET_MS. Mid-response pauses flap thinking→idle
+          // many times per turn; cancellation in the line above ensures
+          // only the *final* idle (the one where thinking doesn't resume)
+          // actually pings.
+          const timer = setTimeout(() => {
+            idleNotifyTimers.delete(key);
+            const cur = get();
+            if (cur.statuses[key] !== "idle") return;
+            const pane = cur.panes.find((p) => p.key === key);
             notifyAgentIdle(pane ? labelFromCwd(pane.cwd) : "Agent");
-          }
+          }, NOTIFY_QUIET_MS);
+          idleNotifyTimers.set(key, timer);
         }
       },
 
@@ -461,25 +604,56 @@ export const useCrew = create<CrewState>()(
       setComposerText: (t) => set({ composerText: t }),
 
       broadcast: async () => {
-        const { panes, selected, composerText } = get();
+        const {
+          panes,
+          selected,
+          composerText,
+          roles,
+          broadcastOverrideRoleId,
+        } = get();
         const text = composerText;
         if (!text.trim()) return 0;
         const targets = panes.filter((p) => selected[p.key]);
         if (targets.length === 0) return 0;
-        const payload = text + "\r";
-        const bytes = Array.from(new TextEncoder().encode(payload));
+
+        // When override is set, every selected pane gets the override role's
+        // prefix regardless of its assigned role. Otherwise each pane uses
+        // its own assigned role's prefix (or no prefix if unassigned).
+        const overrideRole = broadcastOverrideRoleId
+          ? roles.find((r) => r.id === broadcastOverrideRoleId)
+          : undefined;
+
         const sentAt = Date.now();
+        const sentTexts = new Map<string, string>();
+
         await Promise.all(
-          targets.map((t) =>
-            invoke("write_agent", { id: t.key, data: bytes }).catch((e) => {
-              console.error("broadcast to", t.key, "failed:", e);
-            })
-          )
+          targets.map((t) => {
+            const role = overrideRole
+              ? overrideRole
+              : t.roleId
+                ? roles.find((r) => r.id === t.roleId)
+                : undefined;
+            const prefix = role?.promptPrefix?.trim();
+            const finalText = prefix ? `${prefix}\n\n${text}` : text;
+            sentTexts.set(t.key, finalText);
+            const bytes = Array.from(
+              new TextEncoder().encode(finalText + "\r"),
+            );
+            return invoke("write_agent", { id: t.key, data: bytes }).catch(
+              (e) => {
+                console.error("broadcast to", t.key, "failed:", e);
+              },
+            );
+          }),
         );
+
         set((s) => {
           const lastBroadcast = { ...s.lastBroadcast };
           for (const t of targets) {
-            lastBroadcast[t.key] = { text, at: sentAt };
+            lastBroadcast[t.key] = {
+              text: sentTexts.get(t.key) ?? text,
+              at: sentAt,
+            };
           }
           return { composerText: "", lastBroadcast };
         });
@@ -504,8 +678,14 @@ export const useCrew = create<CrewState>()(
                   command: p.command,
                   args: p.args,
                   branch: p.worktree.branch,
+                  roleId: p.roleId,
                 }
-              : { cwd: p.cwd, command: p.command, args: p.args },
+              : {
+                  cwd: p.cwd,
+                  command: p.command,
+                  args: p.args,
+                  roleId: p.roleId,
+                },
           ),
         };
         set((s) => ({ templates: [...s.templates, tpl] }));
@@ -533,6 +713,7 @@ export const useCrew = create<CrewState>()(
                 command: a.command,
                 args: a.args,
                 createdAt: now,
+                roleId: a.roleId,
               };
             }
             const detect = await gitDetect(a.cwd);
@@ -564,6 +745,7 @@ export const useCrew = create<CrewState>()(
                   branch: wt.branch,
                   autoCreated: true,
                 },
+                roleId: a.roleId,
               };
             } catch (e) {
               console.error(
@@ -625,10 +807,69 @@ export const useCrew = create<CrewState>()(
       toggleNotifications: () =>
         set((s) => ({ notificationsEnabled: !s.notificationsEnabled })),
 
+      createRole: (input) => {
+        const id = mkRoleId();
+        set((s) => ({ roles: [...s.roles, { id, ...input }] }));
+        return id;
+      },
+
+      updateRole: (id, patch) =>
+        set((s) => ({
+          roles: s.roles.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+        })),
+
+      deleteRole: (id) =>
+        set((s) => {
+          // Detach this role from any pane / template / override that
+          // referenced it so we don't leave dangling pointers.
+          const panes = s.panes.map((p) =>
+            p.roleId === id ? { ...p, roleId: undefined } : p,
+          );
+          const templates = s.templates.map((t) => ({
+            ...t,
+            agents: t.agents.map((a) =>
+              a.roleId === id ? { ...a, roleId: undefined } : a,
+            ),
+          }));
+          return {
+            roles: s.roles.filter((r) => r.id !== id),
+            panes,
+            templates,
+            broadcastOverrideRoleId:
+              s.broadcastOverrideRoleId === id
+                ? null
+                : s.broadcastOverrideRoleId,
+          };
+        }),
+
+      assignPaneRole: (paneKey, roleId) =>
+        set((s) => ({
+          panes: s.panes.map((p) =>
+            p.key === paneKey ? { ...p, roleId: roleId ?? undefined } : p,
+          ),
+        })),
+
+      setRolesModalOpen: (open) => set({ rolesModalOpen: open }),
+
+      setBroadcastOverrideRoleId: (id) =>
+        set({ broadcastOverrideRoleId: id }),
+
+      setBroadcastPaletteOpen: (open) =>
+        set({ broadcastPaletteOpen: open }),
+
       bootIfNeeded: async () => {
         const s = get();
         if (s.hasBooted) return;
         set({ hasBooted: true });
+        if (!s.rolesSeeded) {
+          // First-run only: ship some sensible roles. If the user wipes them
+          // afterwards we won't re-seed, since the flag stays true.
+          const seeded = STARTER_ROLES.map((r) => ({ id: mkRoleId(), ...r }));
+          set((cur) => ({
+            roles: cur.roles.length === 0 ? seeded : cur.roles,
+            rolesSeeded: true,
+          }));
+        }
         if (
           s.panes.length === 0 &&
           s.defaultTemplateId &&
@@ -645,6 +886,8 @@ export const useCrew = create<CrewState>()(
         templates: state.templates,
         defaultTemplateId: state.defaultTemplateId,
         notificationsEnabled: state.notificationsEnabled,
+        roles: state.roles,
+        rolesSeeded: state.rolesSeeded,
       }) as Partial<CrewState>,
     }
   )

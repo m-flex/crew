@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useCrew } from "../store";
+import { useCrew, PaneSpec } from "../store";
 import { AgentStatus } from "../status";
 import { EmptyState } from "./EmptyState";
 
@@ -14,9 +14,6 @@ const STATUS_LABEL: Record<AgentStatus, string> = {
 
 export function RadarView() {
   const panes = useCrew((s) => s.panes);
-  const statuses = useCrew((s) => s.statuses);
-  const lastActivity = useCrew((s) => s.lastActivity);
-  const jumpToAgent = useCrew((s) => s.jumpToAgent);
 
   // Tick every second so relative-time labels stay live.
   const [, setTick] = useState(0);
@@ -30,35 +27,57 @@ export function RadarView() {
   return (
     <div className="radar">
       <div className="radar-grid">
-        {panes.map((spec, i) => {
-          const status = statuses[spec.key] ?? "spawning";
-          const activity = lastActivity[spec.key] ?? spec.createdAt;
-          return (
-            <button
-              key={spec.key}
-              className={`radar-card radar-card-${status}`}
-              onClick={() => jumpToAgent(spec.key)}
-            >
-              <div className="radar-card-top">
-                <span className="radar-card-index">{i + 1}</span>
-                <span className={`dot dot-${status} dot-lg`} />
-              </div>
-              <div className="radar-card-body">
-                <div className="radar-card-cwd" title={spec.cwd}>
-                  {labelFromCwd(spec.cwd)}
-                </div>
-                <div className="radar-card-status">
-                  {STATUS_LABEL[status]}
-                </div>
-              </div>
-              <div className="radar-card-foot">
-                <span>{relativeTime(activity)}</span>
-              </div>
-            </button>
-          );
-        })}
+        {panes.map((spec, i) => <RadarCard key={spec.key} spec={spec} index={i} />)}
       </div>
     </div>
+  );
+}
+
+interface RadarCardProps {
+  spec: PaneSpec;
+  index: number;
+}
+
+function RadarCard({ spec, index }: RadarCardProps) {
+  const status = useCrew((s) => s.statuses[spec.key] ?? "spawning");
+  const activity = useCrew(
+    (s) => s.lastActivity[spec.key] ?? spec.createdAt,
+  );
+  const role = useCrew((s) => {
+    if (!spec.roleId) return null;
+    return s.roles.find((r) => r.id === spec.roleId) ?? null;
+  });
+  const jumpToAgent = useCrew((s) => s.jumpToAgent);
+
+  return (
+    <button
+      className={`radar-card radar-card-${status}`}
+      style={role?.color ? { borderColor: role.color } : undefined}
+      onClick={() => jumpToAgent(spec.key)}
+    >
+      <div className="radar-card-top">
+        <span className="radar-card-index">{index + 1}</span>
+        <span className={`dot dot-${status} dot-lg`} />
+        {role && (
+          <span
+            className="radar-card-role"
+            style={{ background: role.color ?? "#9da6b3" }}
+            title={`Role: ${role.name}`}
+          >
+            {role.name}
+          </span>
+        )}
+      </div>
+      <div className="radar-card-body">
+        <div className="radar-card-cwd" title={spec.cwd}>
+          {labelFromCwd(spec.cwd)}
+        </div>
+        <div className="radar-card-status">{STATUS_LABEL[status]}</div>
+      </div>
+      <div className="radar-card-foot">
+        <span>{relativeTime(activity)}</span>
+      </div>
+    </button>
   );
 }
 
