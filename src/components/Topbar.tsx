@@ -1,6 +1,7 @@
 import { ask } from "@tauri-apps/plugin-dialog";
 import { useCrew, View } from "../store";
 import { ShortcutsHelp } from "./ShortcutsHelp";
+import { ensureNotificationPermission } from "../notify";
 
 const VIEW_PILLS: { key: View; label: string }[] = [
   { key: "grid", label: "Grid" },
@@ -16,9 +17,21 @@ export function Topbar() {
   const setView = useCrew((s) => s.setView);
   const setTemplatesModalOpen = useCrew((s) => s.setTemplatesModalOpen);
   const templateCount = useCrew((s) => s.templates.length);
+  const notificationsEnabled = useCrew((s) => s.notificationsEnabled);
+  const toggleNotifications = useCrew((s) => s.toggleNotifications);
   const awaitingCount = useCrew(
     (s) => Object.values(s.statuses).filter((st) => st === "awaiting").length
   );
+
+  const onToggleNotifications = async () => {
+    if (!notificationsEnabled) {
+      // Prompt the OS for permission the moment the user opts in,
+      // not the first time an agent goes idle.
+      const granted = await ensureNotificationPermission();
+      if (!granted) return;
+    }
+    toggleNotifications();
+  };
 
   const onCloseAll = async () => {
     if (panes.length === 0) return;
@@ -67,6 +80,21 @@ export function Topbar() {
       <div className="topbar-right">
         <ShortcutsHelp />
         <button
+          className={`action action-subtle action-icon ${
+            notificationsEnabled ? "action-icon-active" : ""
+          }`}
+          onClick={onToggleNotifications}
+          title={
+            notificationsEnabled
+              ? "Notifications on (idle)"
+              : "Notifications off"
+          }
+          aria-label="Toggle idle notifications"
+          aria-pressed={notificationsEnabled}
+        >
+          <BellIcon muted={!notificationsEnabled} />
+        </button>
+        <button
           className="action action-subtle"
           onClick={() => setTemplatesModalOpen(true)}
           title="Templates"
@@ -96,5 +124,33 @@ export function Topbar() {
         </button>
       </div>
     </header>
+  );
+}
+
+interface BellIconProps {
+  muted?: boolean;
+}
+function BellIcon({ muted }: BellIconProps) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden>
+      <path
+        d="M3 10.5 H11 L10 9.2 V6.5 a3 3 0 0 0 -6 0 V9.2 L3 10.5 Z M5.8 12 a1.2 1.2 0 0 0 2.4 0"
+        fill={muted ? "none" : "currentColor"}
+        fillOpacity={muted ? 0 : 0.18}
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      {muted && (
+        <path
+          d="M2 2 L12 12"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          strokeLinecap="round"
+        />
+      )}
+    </svg>
   );
 }
