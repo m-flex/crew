@@ -19,6 +19,12 @@ const SWARM: Shortcut[] = [
   { keys: [MOD, "Enter"], label: "Broadcast prompt to selected agents" },
 ];
 
+const TERMINAL: Shortcut[] = [
+  { keys: [MOD, "C"], label: "Copy selection (sends interrupt if no selection)" },
+  { keys: [MOD, "V"], label: "Paste from clipboard" },
+  { keys: [MOD, "Click"], label: "Open URL in browser" },
+];
+
 export function ShortcutsHelp() {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -58,6 +64,22 @@ export function ShortcutsHelp() {
             <div className="shortcuts-heading">Global</div>
             <ul className="shortcuts-list">
               {GLOBAL.map((s) => (
+                <li key={s.label} className="shortcuts-row">
+                  <span className="shortcuts-label">{s.label}</span>
+                  <span className="shortcuts-keys">
+                    {s.keys.map((k, i) => (
+                      <kbd key={i} className="kbd kbd-lg">{k}</kbd>
+                    ))}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="shortcuts-section">
+            <div className="shortcuts-heading">Terminal</div>
+            <ul className="shortcuts-list">
+              {TERMINAL.map((s) => (
                 <li key={s.label} className="shortcuts-row">
                   <span className="shortcuts-label">{s.label}</span>
                   <span className="shortcuts-keys">
