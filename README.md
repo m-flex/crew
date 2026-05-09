@@ -8,7 +8,16 @@ Built with Tauri 2 + React + TypeScript. Native PTYs (ConPTY on Windows, openpty
 
 - **Grid** — tiled terminals you can focus, maximize, or close.
 - **Radar** — at-a-glance status of every agent (running / awaiting input / idle).
-- **Swarm** — composer that broadcasts the same prompt to the agents you select.
+
+## Roles
+
+Saved system-prompt + broadcast-prefix bundles you can attach to a pane to specialise it. A role's system prompt is appended to `claude` at spawn (via `--append-system-prompt`); its broadcast prefix is prepended to every message sent to that pane through the broadcast palette. Open the **Roles** modal in the topbar to manage them. Crew ships starter roles (Reviewer, Tester, Refactorer, Documenter) on first run.
+
+Click the role chip in any pane header to assign or change a pane's role. Editing a role's system prompt only takes effect the next time the agent spawns (it's baked into the running process); the broadcast prefix updates immediately for the next message.
+
+## Broadcast palette
+
+Press **Ctrl/⌘ Enter** to open a palette that sends the same message to multiple panes at once. Pick which panes receive it, optionally override the role framing for that one message, then Ctrl/⌘ Enter again to fire. Useful for control-plane messages (`/clear`, `/compact`, "stop, requirements changed"), polling status across N agents, or fan-out tasks where each pane wears a different role.
 
 ## Git integration
 
@@ -35,8 +44,8 @@ Auto-created worktrees are removed when the agent's pane closes (Crew prompts be
 | `Ctrl/⌘ M` | Maximize / restore focused agent |
 | `Ctrl/⌘ 1–9` | Focus agent by index |
 | `Ctrl/⌘ ]` / `[` | Focus next / previous agent |
-| `Ctrl/⌘ \` | Cycle view (Grid → Radar → Swarm) |
-| `Ctrl/⌘ Enter` | Broadcast (Swarm composer) |
+| `Ctrl/⌘ \` | Cycle view (Grid ↔ Radar) |
+| `Ctrl/⌘ Enter` | Open broadcast palette (and send from inside it) |
 
 ## Prerequisites
 

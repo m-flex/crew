@@ -9,14 +9,15 @@ const GLOBAL: Shortcut[] = [
   { keys: [MOD, "T"], label: "New agent" },
   { keys: [MOD, "W"], label: "Close focused agent" },
   { keys: [MOD, "M"], label: "Maximize / restore focused agent" },
+  { keys: [MOD, "Enter"], label: "Open broadcast palette" },
   { keys: [MOD, "1"], label: "Focus agent by index (1–9)" },
   { keys: [MOD, "]"], label: "Focus next agent" },
   { keys: [MOD, "["], label: "Focus previous agent" },
-  { keys: [MOD, "\\"], label: "Cycle view (Grid → Radar → Swarm)" },
+  { keys: [MOD, "\\"], label: "Cycle view (Grid ↔ Radar)" },
 ];
 
-const SWARM: Shortcut[] = [
-  { keys: [MOD, "Enter"], label: "Broadcast prompt to selected agents" },
+const BROADCAST: Shortcut[] = [
+  { keys: [MOD, "Enter"], label: "Send to selected agents" },
 ];
 
 const TERMINAL: Shortcut[] = [
@@ -93,9 +94,9 @@ export function ShortcutsHelp() {
           </div>
 
           <div className="shortcuts-section">
-            <div className="shortcuts-heading">Swarm composer</div>
+            <div className="shortcuts-heading">Broadcast palette</div>
             <ul className="shortcuts-list">
-              {SWARM.map((s) => (
+              {BROADCAST.map((s) => (
                 <li key={s.label} className="shortcuts-row">
                   <span className="shortcuts-label">{s.label}</span>
                   <span className="shortcuts-keys">
