@@ -78,15 +78,19 @@ export function createStatusDetector(opts: DetectorOptions): StatusDetector {
       ingestTimes.push(now);
       ingestTimes = ingestTimes.filter((t) => now - t < activityWindowMs);
 
+      // Awaiting prompts are static text that sits on screen, so test the
+      // accumulated tail. Thinking is a live spinner that re-renders many
+      // times per second — testing the current chunk only avoids matching
+      // a stale "esc to interrupt" left in the buffer after Claude finished.
       const tail = buffer.slice(-600);
       const looksLikeConfirm = AWAITING_RE.test(tail);
-      const explicitThinking = THINKING_RE.test(tail);
+      const explicitThinking = THINKING_RE.test(stripped);
       const sustained = ingestTimes.length >= activityThreshold;
 
       // Only flip to thinking on a strong signal: either Claude's own
-      // "esc to interrupt" marker, or sustained burst of real output.
-      // Single isolated ingests (e.g. SIGWINCH redraws after a view-switch,
-      // user keypress echoes) leave status alone.
+      // "esc to interrupt" marker in the live chunk, or a sustained burst
+      // of real output. Single isolated ingests (SIGWINCH redraws after a
+      // view-switch, keypress echoes) leave status alone.
       if (explicitThinking || sustained) {
         set("thinking");
       } else if (status === "spawning") {
@@ -96,10 +100,13 @@ export function createStatusDetector(opts: DetectorOptions): StatusDetector {
       }
 
       clearTimer();
-      timer = setTimeout(
-        () => set(looksLikeConfirm ? "awaiting" : "idle"),
-        looksLikeConfirm ? awaitingDelay : idleDelay
-      );
+      timer = setTimeout(() => {
+        set(looksLikeConfirm ? "awaiting" : "idle");
+        // Drop pre-quiet activity so a fresh redraw burst on an otherwise
+        // idle agent has to independently clear the threshold to flip back
+        // to thinking.
+        ingestTimes = [];
+      }, looksLikeConfirm ? awaitingDelay : idleDelay);
     },
 
     exit(code: number | null) {

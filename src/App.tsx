@@ -5,6 +5,7 @@ import { AgentGrid } from "./components/AgentGrid";
 import { RadarView } from "./components/RadarView";
 import { SwarmView } from "./components/Swarm";
 import { TemplatesModal } from "./components/TemplatesModal";
+import { BranchPickerModal } from "./components/BranchPickerModal";
 import "./App.css";
 
 function App() {
@@ -79,6 +80,7 @@ function App() {
         {view === "swarm" && <SwarmView />}
       </div>
       <TemplatesModal />
+      <BranchPickerModal />
     </div>
   );
 }

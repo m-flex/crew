@@ -10,6 +10,22 @@ Built with Tauri 2 + React + TypeScript. Native PTYs (ConPTY on Windows, openpty
 - **Radar** — at-a-glance status of every agent (running / awaiting input / idle).
 - **Swarm** — composer that broadcasts the same prompt to the agents you select.
 
+## Git integration
+
+Each pane's header shows a branch badge (current branch + dirty count) when the agent's working directory is inside a git repo. Click the badge to slide out a per-pane git panel with three tabs:
+
+- **Status** — staged / unstaged / untracked files. Stage, unstage, discard, click any path to view its diff. Bottom of the tab is a commit composer with an Amend toggle.
+- **Branches** — list local + remote branches, checkout existing or create-and-checkout new ones, delete branches.
+- **Log** — last 50 commits on HEAD with author and relative time.
+
+When you spawn a new agent on a folder that is inside a git repository, Crew offers a branch picker:
+
+- **Use current branch** — spawns in the chosen folder as-is. Fast path for single-agent work; if two agents land here they will fight over `HEAD`.
+- **Existing branch** — creates a worktree under `<repo>/.crew-worktrees/<branch>/` and spawns the agent there. The branch must not already be checked out elsewhere.
+- **New branch** — creates the branch from a base of your choosing, then a worktree on it.
+
+Auto-created worktrees are removed when the agent's pane closes (Crew prompts before discarding uncommitted changes). A journal at your app data dir tracks active worktrees so a crashed app can prune the orphans on next launch. Templates remember each pane's branch — loading a template recreates the worktrees.
+
 ## Shortcuts
 
 | Keys | Action |
