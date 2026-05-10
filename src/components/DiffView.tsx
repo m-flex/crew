@@ -86,21 +86,23 @@ function DiffFileBlock({ file }: { file: DiffFile }) {
       {file.hunks.map((h, i) => (
         <div key={i} className="diff-hunk">
           <div className="diff-hunk-header">{h.header.trimEnd()}</div>
-          {h.lines.map((l, j) => (
-            <div
-              key={j}
-              className={`diff-line diff-line-${classFor(l.origin)}`}
-            >
-              <span className="diff-lineno">
-                {l.oldLineno !== null ? l.oldLineno : ""}
-              </span>
-              <span className="diff-lineno">
-                {l.newLineno !== null ? l.newLineno : ""}
-              </span>
-              <span className="diff-glyph">{l.origin === " " ? " " : l.origin}</span>
-              <span className="diff-content">{stripNewline(l.content)}</span>
-            </div>
-          ))}
+          <div className="diff-hunk-lines">
+            {h.lines.map((l, j) => (
+              <div
+                key={j}
+                className={`diff-line diff-line-${classFor(l.origin)}`}
+              >
+                <span className="diff-lineno">
+                  {l.oldLineno !== null ? l.oldLineno : ""}
+                </span>
+                <span className="diff-lineno">
+                  {l.newLineno !== null ? l.newLineno : ""}
+                </span>
+                <span className="diff-glyph">{l.origin === " " ? " " : l.origin}</span>
+                <span className="diff-content">{stripNewline(l.content)}</span>
+              </div>
+            ))}
+          </div>
         </div>
       ))}
     </div>
