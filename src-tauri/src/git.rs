@@ -669,6 +669,23 @@ impl GitManager {
         b.delete().context("could not delete branch")?;
         Ok(())
     }
+
+    pub fn pull(&self, cwd: &str) -> Result<String> {
+        let output = std::process::Command::new("git")
+            .args(["pull"])
+            .current_dir(Path::new(cwd))
+            .output()
+            .context("failed to run git pull")?;
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        if !output.status.success() {
+            let msg = if !stderr.trim().is_empty() { stderr } else { stdout };
+            return Err(anyhow!("{}", msg.trim()));
+        }
+        // git pull reports remote info to stderr; merge result goes to stdout
+        let combined = format!("{}{}", stderr, stdout);
+        Ok(combined.trim().to_string())
+    }
 }
 
 fn sanitize_branch(branch: &str) -> String {

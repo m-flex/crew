@@ -32,6 +32,8 @@ interface Props {
 export function TerminalPane({ spec, focused, index }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
+  const triggerRespawnRef = useRef<(() => Promise<void>) | null>(null);
+  const prevRespawnAt = useRef(spec.respawnAt ?? 0);
 
   const status = useCrew((s) => s.statuses[spec.key] ?? "spawning");
   const focus = useCrew((s) => s.focus);
@@ -81,8 +83,10 @@ export function TerminalPane({ spec, focused, index }: Props) {
     );
 
     // Ctrl/Cmd+C copies when there's a selection (otherwise falls through to
-    // SIGINT). Ctrl/Cmd+V pastes from the clipboard. Shift+Insert / Ctrl+Insert
-    // are also wired for parity with Linux terminals.
+    // SIGINT). Ctrl/Cmd+V and Shift+Insert paste from the clipboard.
+    // e.preventDefault() is required on paste gestures: without it the browser
+    // fires a separate `paste` DOM event after our keydown handler, causing
+    // xterm's internal paste listener to run a second time and double-paste.
     term.attachCustomKeyEventHandler((e) => {
       if (e.type !== "keydown") return true;
       const mod = e.ctrlKey || e.metaKey;
@@ -97,6 +101,7 @@ export function TerminalPane({ spec, focused, index }: Props) {
         return true;
       }
       if (mod && key === "v") {
+        e.preventDefault();
         navigator.clipboard
           .readText()
           .then((text) => {
@@ -113,6 +118,7 @@ export function TerminalPane({ spec, focused, index }: Props) {
         return false;
       }
       if (e.shiftKey && e.key === "Insert") {
+        e.preventDefault();
         navigator.clipboard
           .readText()
           .then((text) => {
@@ -190,16 +196,36 @@ export function TerminalPane({ spec, focused, index }: Props) {
       await doSpawn();
     };
 
+    const triggerRespawn = async () => {
+      if (!alive) return;
+      term.write("\r\n\x1b[33m• Settings changed. Respawning…\x1b[0m\r\n");
+      try {
+        await invoke("kill_agent", { id });
+      } catch {}
+      spawned = false;
+      outputReceived = false;
+      restartCount = 0;
+      setStatus(id, "spawning");
+      await new Promise((r) => setTimeout(r, 400));
+      if (!alive) return;
+      await doSpawn();
+    };
+    triggerRespawnRef.current = triggerRespawn;
+
     const doSpawn = async () => {
       if (!alive) return;
       try {
-        // Resolve the role at spawn time so an edited preset takes effect on
+        // Resolve role and global flags at spawn time so edits take effect on
         // the next spawn / restart without rewriting saved pane specs.
-        const roles = useCrew.getState().roles;
+        const { roles, dangerouslySkipPermissions } = useCrew.getState();
         const role = spec.roleId
           ? roles.find((r) => r.id === spec.roleId)
           : undefined;
-        const finalArgs = composeSpawnArgs(spec.args, role);
+        const finalArgs = composeSpawnArgs(
+          spec.args,
+          role,
+          dangerouslySkipPermissions,
+        );
         await invoke("spawn_agent", {
           id,
           command: spec.command,
@@ -330,6 +356,18 @@ export function TerminalPane({ spec, focused, index }: Props) {
     if (!focused) return;
     termRef.current?.focus();
   }, [focused]);
+
+  // When `respawnAt` is bumped (e.g. by toggleDangerouslySkipPermissions),
+  // kill the running process and respawn with fresh args. Uses the ref set
+  // inside the main effect so the respawn shares the same terminal and closure
+  // variables (alive, spawned, etc.) as normal restarts.
+  useEffect(() => {
+    const cur = spec.respawnAt ?? 0;
+    if (cur <= prevRespawnAt.current) return;
+    prevRespawnAt.current = cur;
+    triggerRespawnRef.current?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spec.respawnAt]);
 
   const cwdLabel = labelFromCwd(spec.cwd);
 
