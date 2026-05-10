@@ -30,6 +30,8 @@ export interface PaneSpec {
   createdAt: number;
   worktree?: WorktreeMeta;
   roleId?: string;
+  // When updated, triggers an in-place kill+respawn of the agent in TerminalPane.
+  respawnAt?: number;
 }
 
 export interface RolePreset {
@@ -119,6 +121,7 @@ interface CrewState {
   templates: Template[];
   defaultTemplateId: string | null;
   notificationsEnabled: boolean;
+  dangerouslySkipPermissions: boolean;
   roles: RolePreset[];
   // Set the first time we seed starter presets so we don't re-seed after the
   // user has deliberately deleted them all.
@@ -185,6 +188,10 @@ interface CrewState {
   // Notifications
   toggleNotifications: () => void;
 
+  // Permissions
+  toggleDangerouslySkipPermissions: () => void;
+  respawnAll: () => void;
+
   // Roles
   createRole: (input: Omit<RolePreset, "id">) => string;
   updateRole: (id: string, patch: Partial<Omit<RolePreset, "id">>) => void;
@@ -238,10 +245,13 @@ const STARTER_ROLES: Omit<RolePreset, "id">[] = [
 export function composeSpawnArgs(
   userArgs: string[],
   role: RolePreset | undefined,
+  dangerouslySkipPermissions = false,
 ): string[] {
-  if (!role) return userArgs;
-  const out = [...userArgs, ...(role.spawnArgs ?? [])];
-  if (role.systemPrompt && role.systemPrompt.trim().length > 0) {
+  const out = role ? [...userArgs, ...(role.spawnArgs ?? [])] : [...userArgs];
+  if (dangerouslySkipPermissions) {
+    out.push("--dangerously-skip-permissions");
+  }
+  if (role?.systemPrompt && role.systemPrompt.trim().length > 0) {
     out.push("--append-system-prompt", role.systemPrompt);
   }
   return out;
@@ -296,6 +306,7 @@ export const useCrew = create<CrewState>()(
       templates: [],
       defaultTemplateId: null,
       notificationsEnabled: false,
+      dangerouslySkipPermissions: false,
       roles: [],
       rolesSeeded: false,
 
@@ -807,6 +818,18 @@ export const useCrew = create<CrewState>()(
       toggleNotifications: () =>
         set((s) => ({ notificationsEnabled: !s.notificationsEnabled })),
 
+      toggleDangerouslySkipPermissions: () =>
+        set((s) => ({
+          dangerouslySkipPermissions: !s.dangerouslySkipPermissions,
+        })),
+
+      respawnAll: () => {
+        const now = Date.now();
+        set((s) => ({
+          panes: s.panes.map((p) => ({ ...p, respawnAt: now })),
+        }));
+      },
+
       createRole: (input) => {
         const id = mkRoleId();
         set((s) => ({ roles: [...s.roles, { id, ...input }] }));
@@ -886,6 +909,7 @@ export const useCrew = create<CrewState>()(
         templates: state.templates,
         defaultTemplateId: state.defaultTemplateId,
         notificationsEnabled: state.notificationsEnabled,
+        dangerouslySkipPermissions: state.dangerouslySkipPermissions,
         roles: state.roles,
         rolesSeeded: state.rolesSeeded,
       }) as Partial<CrewState>,

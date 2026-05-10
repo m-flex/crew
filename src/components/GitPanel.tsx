@@ -11,6 +11,7 @@ import {
   gitDiscard,
   gitListBranches,
   gitLog,
+  gitPull,
   gitStage,
   gitUnstage,
 } from "../git";
@@ -133,6 +134,7 @@ function relativeTime(seconds: number): string {
 function StatusTab({ cwd, status }: { cwd: string; status: GitStatus }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [pullMsg, setPullMsg] = useState<string | null>(null);
   const [diffSelection, setDiffSelection] = useState<{
     path: string;
     staged: boolean;
@@ -145,6 +147,20 @@ function StatusTab({ cwd, status }: { cwd: string; status: GitStatus }) {
     setErr(null);
     try {
       await fn();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pull = async () => {
+    setBusy(true);
+    setErr(null);
+    setPullMsg(null);
+    try {
+      const msg = await gitPull(cwd);
+      setPullMsg(msg || "Already up to date.");
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -200,6 +216,23 @@ function StatusTab({ cwd, status }: { cwd: string; status: GitStatus }) {
   return (
     <div className="status-tab">
       {err && <div className="branches-error">{err}</div>}
+      {pullMsg && <div className="pull-msg">{pullMsg}</div>}
+
+      {status.behind > 0 && (
+        <div className="pull-banner">
+          <span className="pull-banner-text">
+            {status.behind} commit{status.behind !== 1 ? "s" : ""} behind{" "}
+            {status.upstream ?? "upstream"}
+          </span>
+          <button
+            className="primary-btn pull-banner-btn"
+            onClick={pull}
+            disabled={busy}
+          >
+            Pull
+          </button>
+        </div>
+      )}
 
       {totalChanges === 0 && (
         <div className="status-empty">
@@ -461,6 +494,7 @@ function BranchesTab({
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [pullMsg, setPullMsg] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -499,8 +533,24 @@ function BranchesTab({
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     setErr(null);
+    setPullMsg(null);
     try {
       await fn();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pull = async () => {
+    setBusy(true);
+    setErr(null);
+    setPullMsg(null);
+    try {
+      const msg = await gitPull(cwd);
+      setPullMsg(msg || "Already up to date.");
+      reload();
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -632,6 +682,7 @@ function BranchesTab({
       )}
 
       {err && <div className="branches-error">{err}</div>}
+      {pullMsg && <div className="pull-msg">{pullMsg}</div>}
 
       <div className="branches-list">
         {!list && <div className="branch-picker-empty">Loading…</div>}
@@ -656,6 +707,17 @@ function BranchesTab({
               )}
             </button>
             <span className="branches-row-actions">
+              {b.isHead && b.upstream && (
+                <button
+                  className="branches-action-worktree"
+                  onClick={pull}
+                  disabled={busy}
+                  title={`Pull from ${b.upstream}`}
+                  aria-label={`Pull ${b.name} from ${b.upstream}`}
+                >
+                  ↓ pull
+                </button>
+              )}
               {!b.isHead && (
                 <button
                   className="branches-action-worktree"

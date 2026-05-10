@@ -21,6 +21,13 @@ export function Topbar() {
   const roleCount = useCrew((s) => s.roles.length);
   const notificationsEnabled = useCrew((s) => s.notificationsEnabled);
   const toggleNotifications = useCrew((s) => s.toggleNotifications);
+  const dangerouslySkipPermissions = useCrew(
+    (s) => s.dangerouslySkipPermissions,
+  );
+  const toggleDangerouslySkipPermissions = useCrew(
+    (s) => s.toggleDangerouslySkipPermissions,
+  );
+  const respawnAll = useCrew((s) => s.respawnAll);
   const awaitingCount = useCrew(
     (s) => Object.values(s.statuses).filter((st) => st === "awaiting").length
   );
@@ -33,6 +40,23 @@ export function Topbar() {
       if (!granted) return;
     }
     toggleNotifications();
+  };
+
+  const onToggleDangerouslySkipPermissions = async () => {
+    if (panes.length > 0) {
+      const enabling = !dangerouslySkipPermissions;
+      const ok = await ask(
+        enabling
+          ? "Enabling --dangerously-skip-permissions will respawn all running agents. Continue?"
+          : "Disabling --dangerously-skip-permissions will respawn all running agents. Continue?",
+        { title: "Crew", kind: "warning" },
+      );
+      if (!ok) return;
+    }
+    toggleDangerouslySkipPermissions();
+    if (panes.length > 0) {
+      respawnAll();
+    }
   };
 
   const onCloseAll = async () => {
@@ -81,6 +105,21 @@ export function Topbar() {
 
       <div className="topbar-right">
         <ShortcutsHelp />
+        <button
+          className={`action action-subtle action-icon ${
+            dangerouslySkipPermissions ? "action-icon-warn" : ""
+          }`}
+          onClick={onToggleDangerouslySkipPermissions}
+          title={
+            dangerouslySkipPermissions
+              ? "--dangerously-skip-permissions on (click to disable)"
+              : "--dangerously-skip-permissions off (click to enable)"
+          }
+          aria-label="Toggle dangerously-skip-permissions"
+          aria-pressed={dangerouslySkipPermissions}
+        >
+          <LockIcon unlocked={dangerouslySkipPermissions} />
+        </button>
         <button
           className={`action action-subtle action-icon ${
             notificationsEnabled ? "action-icon-active" : ""
@@ -146,6 +185,41 @@ export function Topbar() {
         </button>
       </div>
     </header>
+  );
+}
+
+function LockIcon({ unlocked }: { unlocked?: boolean }) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden>
+      {/* shackle */}
+      <path
+        d={
+          unlocked
+            ? "M4.5 6V4a2.5 2.5 0 0 1 5 0"
+            : "M4.5 6V4a2.5 2.5 0 0 1 5 0V6"
+        }
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+      {/* body */}
+      <rect
+        x="3"
+        y="6"
+        width="8"
+        height="6"
+        rx="1.2"
+        fill={unlocked ? "none" : "currentColor"}
+        fillOpacity={unlocked ? 0 : 0.18}
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+      {/* keyhole */}
+      {!unlocked && (
+        <circle cx="7" cy="9" r="1" fill="currentColor" fillOpacity={0.6} />
+      )}
+    </svg>
   );
 }
 

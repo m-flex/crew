@@ -194,6 +194,10 @@ export async function gitLog(
   return invoke<CommitInfo[]>("git_log", { cwd, limit, branch });
 }
 
+export async function gitPull(cwd: string): Promise<string> {
+  return invoke<string>("git_pull", { cwd });
+}
+
 // Polls git status while mounted. Probes once via git_detect; if the cwd is
 // not a repo, no polling is scheduled. Default interval is 2.5s — small repos
 // take <5ms, large ones (~10k files) under 50ms, both well under the cadence.

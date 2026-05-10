@@ -188,6 +188,14 @@ fn git_log(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn git_pull(
+    manager: State<'_, GitManager>,
+    cwd: String,
+) -> Result<String, String> {
+    manager.pull(&cwd).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -221,7 +229,8 @@ pub fn run() {
             git_discard,
             git_diff,
             git_commit,
-            git_log
+            git_log,
+            git_pull
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
